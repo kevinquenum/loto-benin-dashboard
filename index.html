@@ -91,6 +91,19 @@
         </div>
     </div>
 
+    <div class="max-w-7xl mx-auto card mb-8">
+        <h2 class="text-xl font-bold mb-2">📈 Tendance d'Évolution Temporelle</h2>
+        <p class="text-xs text-slate-400 mb-4">Sélectionnez une ou plusieurs boules pour comparer leur vitesse d'apparition au fil du temps.</p>
+        
+        <div id="evolutionBallsContainer" class="flex overflow-x-auto py-4 mb-4 custom-scroll gap-2 items-center bg-slate-800/30 rounded-lg px-3 border border-slate-700">
+            </div>
+
+        <div class="custom-scroll overflow-auto w-full bg-slate-800/50 rounded-lg border border-slate-700">
+            <div id="evolutionCanvasWrapper" class="relative">
+                <canvas id="evolutionChart"></canvas>
+            </div>
+        </div>
+    </div>
     <div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         
         <div class="card flex flex-col h-[600px]">
@@ -149,6 +162,7 @@
         
         let allDraws = [];
         let chartInstance = null;
+        let currentStats = []; 
         
         // Variables pour le Lazy Loading
         const CHUNK_SIZE = 100;
@@ -157,7 +171,11 @@
         let currentHistoryIndex = 0;
         let currentCouplesIndex = 0;
 
-        // Fonction pour convertir une date "DD/MM/YYYY" en objet Date Javascript
+        // Variables pour le widget Tendance d'Évolution
+        let evolutionChartInstance = null;
+        let selectedEvolutionNumbers = new Set();
+        let chronoDraws = [];
+
         function parseDateString(dateStr) {
             if (!dateStr) return new Date(0);
             const parts = dateStr.split('/');
@@ -193,12 +211,10 @@
             
             let filteredDraws = allDraws;
 
-            // 1. Filtrer par Type
             if (filterValue !== 'ALL') {
                 filteredDraws = filteredDraws.filter(d => d['Type'] === filterValue || d['Heure du tirage'] === filterValue);
             }
 
-            // 2. Filtrer par Date
             if (startDateVal) {
                 const sDate = new Date(startDateVal);
                 sDate.setHours(0,0,0,0);
@@ -214,10 +230,11 @@
                 document.getElementById('loadingInfo').innerText = "Aucun tirage trouvé pour ces critères.";
                 document.getElementById('loadingInfo').className = "text-amber-400 text-sm font-semibold mt-2 md:mt-0";
                 
-                // Vider les vues
                 document.getElementById('historyTable').innerHTML = '';
                 document.getElementById('couplesTable').innerHTML = '';
                 if(chartInstance) chartInstance.destroy();
+                if(evolutionChartInstance) evolutionChartInstance.destroy();
+                document.getElementById('evolutionBallsContainer').innerHTML = '';
                 return;
             }
 
@@ -250,12 +267,13 @@
                 }
             });
 
-            // Préparer les stats pour les boules
             let stats = [];
             for (let i = 1; i <= 90; i++) {
                 stats.push({ number: i, freq: frequencies[i], delay: lastSeen[i] === 9999 ? 'N/A' : lastSeen[i] });
             }
             stats.sort((a, b) => b.freq - a.freq);
+            
+            currentStats = stats; 
 
             const hot = [...stats].slice(0, 5);
             const cold = [...stats].sort((a, b) => a.freq - b.freq).slice(0, 5);
@@ -265,17 +283,141 @@
             afficherBoules('coldNumbers', cold, 'ball-cold', 'Sorties');
             afficherBoules('delayedNumbers', delayed, 'ball-delay', 'Tirages ret.');
             
-            // Préparer les données globales pour le Lazy Loading
             globalFilteredDraws = filteredDraws;
             globalCouplesArr = Object.keys(couples).map(key => ({
                 couple: key, count: couples[key]
             })).sort((a, b) => b.count - a.count); 
 
-            // Afficher le premier lot (chunk)
+            chronoDraws = [...filteredDraws].sort((a, b) => {
+                return parseDateString(a['Date complète'] || a['Date']) - parseDateString(b['Date complète'] || b['Date']);
+            });
+
+            if (selectedEvolutionNumbers.size === 0 && stats.length > 0) {
+                selectedEvolutionNumbers.add(stats[0].number);
+            }
+
+            afficherBoulesEvolution();
+            mettreAJourGraphiqueEvolution();
+
             afficherHistoriqueChunk(true); 
             afficherCouplesChunk(true); 
-
             mettreAJourGraphique(stats);
+        }
+
+        function afficherBoulesEvolution() {
+            const container = document.getElementById('evolutionBallsContainer');
+            let html = '';
+            for(let i = 1; i <= 90; i++) {
+                const isActive = selectedEvolutionNumbers.has(i);
+                const color = `hsl(${(i * 137.5) % 360}, 75%, 55%)`; 
+                const shadow = isActive ? `box-shadow: 0 0 12px ${color};` : '';
+                const bg = isActive ? color : '#334155';
+                const opacityClass = isActive ? 'opacity-100 scale-110' : 'opacity-40 hover:opacity-80 scale-90';
+                
+                html += `
+                <div onclick="toggleEvolutionNumber(${i})" 
+                     class="ball cursor-pointer transition-all duration-300 transform ${opacityClass}" 
+                     style="background: ${bg}; ${shadow}">
+                    ${i}
+                </div>`;
+            }
+            container.innerHTML = html;
+        }
+
+        function toggleEvolutionNumber(num) {
+            if (selectedEvolutionNumbers.has(num)) {
+                selectedEvolutionNumbers.delete(num);
+            } else {
+                selectedEvolutionNumbers.add(num);
+            }
+            afficherBoulesEvolution();
+            mettreAJourGraphiqueEvolution();
+        }
+
+        function mettreAJourGraphiqueEvolution() {
+            const isMobile = window.innerWidth < 768;
+            const canvasWrapper = document.getElementById('evolutionCanvasWrapper');
+            const ctx = document.getElementById('evolutionChart').getContext('2d');
+            
+            const minPixelsPerPoint = isMobile ? 12 : 6;
+            const minTotalWidth = Math.max(canvasWrapper.parentElement.clientWidth, chronoDraws.length * minPixelsPerPoint);
+            
+            canvasWrapper.style.height = isMobile ? '350px' : '400px';
+            canvasWrapper.style.width = `${minTotalWidth}px`;
+
+            const labels = chronoDraws.map(d => `${d['Date complète'] || d['Date']} (${d['Heure du tirage']})`);
+            const datasets = [];
+
+            selectedEvolutionNumbers.forEach(num => {
+                const dataPoints = chronoDraws.map(draw => {
+                    const boules = [
+                        parseInt(draw['Boule1']), parseInt(draw['Boule2']), 
+                        parseInt(draw['Boule3']), parseInt(draw['Boule4']), parseInt(draw['Boule5'])
+                    ];
+                    return boules.includes(num) ? 1 : 0;
+                });
+
+                const color = `hsl(${(num * 137.5) % 360}, 75%, 55%)`;
+
+                datasets.push({
+                    label: `Boule ${num}`,
+                    data: dataPoints,
+                    borderColor: color,
+                    backgroundColor: color,
+                    borderWidth: isMobile ? 2 : 3,
+                    tension: 0.3,
+                    pointRadius: chronoDraws.length > 80 ? 0 : 3,
+                    pointHoverRadius: 6,
+                    pointBackgroundColor: '#0f172a'
+                });
+            });
+
+            if (evolutionChartInstance) {
+                evolutionChartInstance.destroy();
+            }
+
+            evolutionChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        legend: { 
+                            display: true, 
+                            labels: { color: '#f8fafc', font: { weight: 'bold' }, usePointStyle: true, boxWidth: 8 } 
+                        },
+                        datalabels: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label} : ${context.raw === 1 ? 'Sortie' : 'Non sortie'}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(71, 85, 105, 0.1)' },
+                            ticks: { color: '#94a3b8', maxTicksLimit: isMobile ? 10 : 20 }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            max: 1.1,
+                            grid: { color: 'rgba(71, 85, 105, 0.2)' },
+                            ticks: { color: '#f8fafc', font: { weight: 'bold' }, stepSize: 1 },
+                            title: { display: true, text: 'Apparition (1 = Oui, 0 = Non)', color: '#94a3b8' }
+                        }
+                    }
+                }
+            });
         }
 
         function afficherBoules(elementId, dataArray, cssClass, labelText) {
@@ -291,7 +433,6 @@
             container.innerHTML = html;
         }
 
-        // --- LAZY LOADING : HISTORIQUE ---
         function afficherHistoriqueChunk(reset = false) {
             const tbody = document.getElementById('historyTable');
             if (reset) {
@@ -316,12 +457,10 @@
                 </tr>`;
             });
             
-            // Injection ultra-rapide en HTML brut
             tbody.insertAdjacentHTML('beforeend', html);
             currentHistoryIndex += CHUNK_SIZE;
         }
 
-        // --- LAZY LOADING : COUPLES ---
         function afficherCouplesChunk(reset = false) {
             const tbody = document.getElementById('couplesTable');
             if (reset) {
@@ -333,7 +472,7 @@
             if (chunk.length === 0) return;
 
             let html = '';
-            const maxCount = globalCouplesArr.length > 0 ? globalCouplesArr[0].count : 1; // Sécurité
+            const maxCount = globalCouplesArr.length > 0 ? globalCouplesArr[0].count : 1; 
 
             chunk.forEach(c => {
                 const percent = Math.min((c.count / maxCount) * 100, 100);
@@ -351,16 +490,13 @@
                 </tr>`;
             });
             
-            // Injection ultra-rapide en HTML brut
             tbody.insertAdjacentHTML('beforeend', html);
             currentCouplesIndex += CHUNK_SIZE;
         }
 
-        // Écouteurs de défilement pour charger la suite automatiquement
         function setupScrollListeners() {
             const historyScroll = document.getElementById('historyScrollContainer');
             historyScroll.addEventListener('scroll', function() {
-                // Si on arrive presque en bas du conteneur, on charge la suite
                 if (this.scrollTop + this.clientHeight >= this.scrollHeight - 100) {
                     afficherHistoriqueChunk();
                 }
@@ -391,7 +527,7 @@
             const data = stats.map(s => s.freq);
 
             if (chartInstance) {
-                chartInstance.destroy();
+                chartInstance.destroy(); 
             }
 
             chartInstance = new Chart(ctx, {
@@ -437,27 +573,20 @@
             });
         }
 
-        // Optimisation majeure : Ne recalculer QUE les dimensions du graphique au redimensionnement
         let resizeTimeout;
         window.addEventListener('resize', () => {
             clearTimeout(resizeTimeout);
             resizeTimeout = setTimeout(() => {
-                if (allDraws.length > 0 && chartInstance) {
-                    const isMobile = window.innerWidth < 768;
-                    const canvasWrapper = document.getElementById('canvasWrapper');
-                    
-                    if (isMobile) {
-                        canvasWrapper.style.width = '100%';
-                        canvasWrapper.style.height = '1800px';
-                        chartInstance.options.indexAxis = 'y';
-                    } else {
-                        canvasWrapper.style.height = '400px';
-                        canvasWrapper.style.width = '2500px';
-                        chartInstance.options.indexAxis = 'x';
+                if (allDraws.length > 0) {
+                    if (currentStats.length > 0) {
+                        mettreAJourGraphique(currentStats);
                     }
-                    chartInstance.update();
+                    
+                    if (evolutionChartInstance) {
+                        mettreAJourGraphiqueEvolution();
+                    }
                 }
-            }, 250); // Attend 250ms après la fin du scroll/resize pour exécuter
+            }, 250); 
         });
 
         window.onload = initApp;
