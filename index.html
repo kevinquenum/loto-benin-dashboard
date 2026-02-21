@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loto 5/90 - Bénin | Dashboard Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .card { background-color: #1e293b; border-radius: 0.75rem; padding: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .ball { display: inline-flex; align-items: center; justify-content: center; width: 2.5rem; height: 2.5rem; border-radius: 9999px; font-weight: bold; color: white; background: linear-gradient(135deg, #3b82f6, #2563eb); text-shadow: 1px 1px 2px rgba(0,0,0,0.5); margin: 0.1rem; flex-shrink: 0; }
+        .ball-hot { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        .ball-cold { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
+        .ball-delay { background: linear-gradient(135deg, #f59e0b, #d97706); }
+        
+        /* Scrollbars élégantes pour tous les conteneurs overflow */
+        .custom-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #0f172a; border-radius: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
+    </style>
+</head>
+<body class="p-4 md:p-6">
+
+    <div class="max-w-7xl mx-auto border-b border-slate-700 pb-4 mb-6">
+        <h1 class="text-3xl md:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">Loto 5/90 - Bénin - State</h1>
+        <p class="text-slate-400 mt-2 text-sm md:text-base">Analyse complète et outil d'aide à la décision. Statistique des tirages des 10 derniers Mois.</p>
+    </div>
+
+    <div class="max-w-7xl mx-auto card mb-8">
+        <div class="flex flex-wrap gap-4 items-end">
+            <div>
+                <label for="typeFilter" class="block text-xs font-semibold text-slate-400 mb-1">Tirage :</label>
+                <select id="typeFilter" class="bg-slate-800 border border-slate-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 w-full md:w-auto">
+                    <option value="ALL">Tous les tirages</option>
+                    <option value="Fortune 11H">Fortune 11H</option>
+                    <option value="Fortune 14H">Fortune 14H</option>
+                    <option value="Fortune 18H">Fortune 18H</option>
+                    <option value="Star 11H">Star 11H</option>
+                    <option value="Star 14H">Star 14H</option>
+                    <option value="Star 18H">Star 18H</option>
+                    <option value="Digital 21H">Digital 21H</option>
+                    <option value="Digital 00H">Digital 00H</option>
+                </select>
+            </div>
+            <div>
+                <label for="startDate" class="block text-xs font-semibold text-slate-400 mb-1">Du :</label>
+                <input type="date" id="startDate" class="bg-slate-800 border border-slate-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2">
+            </div>
+            <div>
+                <label for="endDate" class="block text-xs font-semibold text-slate-400 mb-1">Au :</label>
+                <input type="date" id="endDate" class="bg-slate-800 border border-slate-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2">
+            </div>
+            <div class="flex-grow md:flex-grow-0">
+                <button onclick="analyserDonnees()" class="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded transition-colors shadow-lg shadow-blue-500/30">
+                    Analyser
+                </button>
+            </div>
+            <div id="loadingInfo" class="text-emerald-400 text-sm font-semibold hidden w-full md:w-auto mt-2 md:mt-0"></div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="card border-t-4 border-red-500">
+            <h2 class="text-lg font-bold mb-1 text-slate-200">🔥 Top 5 Chauds</h2>
+            <p class="text-[10px] text-slate-400 mb-3">Les plus fréquents.</p>
+            <div id="hotNumbers" class="flex flex-wrap gap-2"></div>
+        </div>
+        <div class="card border-t-4 border-amber-500">
+            <h2 class="text-lg font-bold mb-1 text-slate-200">⏳ Top 5 Retards</h2>
+            <p class="text-[10px] text-slate-400 mb-3">Absents depuis longtemps.</p>
+            <div id="delayedNumbers" class="flex flex-wrap gap-2"></div>
+        </div>
+        <div class="card border-t-4 border-blue-500">
+            <h2 class="text-lg font-bold mb-1 text-slate-200">❄️ Top 5 Froids</h2>
+            <p class="text-[10px] text-slate-400 mb-3">Les moins fréquents.</p>
+            <div id="coldNumbers" class="flex flex-wrap gap-2"></div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto card mb-8">
+        <h2 class="text-xl font-bold mb-2">Fréquence des 90 numéros (Ordre décroissant)</h2>
+        <p class="text-xs text-slate-400 mb-4">Balayez pour voir tous les numéros.</p>
+        
+        <div class="custom-scroll overflow-auto w-full bg-slate-800/50 rounded-lg border border-slate-700">
+            <div id="canvasWrapper" class="relative">
+                <canvas id="freqChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        
+        <div class="card flex flex-col h-[600px]">
+            <h2 class="text-xl font-bold mb-2">Tous les Couplés (Pairs)</h2>
+            <p class="text-xs text-slate-400 mb-4">Combinaisons de 2 numéros.</p>
+            <div id="couplesScrollContainer" class="custom-scroll overflow-auto flex-grow rounded border border-slate-700">
+                <table class="w-full text-sm text-left text-slate-300 whitespace-nowrap">
+                    <thead class="text-xs text-slate-400 uppercase bg-slate-900 sticky top-0 z-10 shadow">
+                        <tr>
+                            <th scope="col" class="px-4 py-3">Couplé</th>
+                            <th scope="col" class="px-4 py-3">Fréquence</th>
+                        </tr>
+                    </thead>
+                    <tbody id="couplesTable" class="divide-y divide-slate-700/50">
+                        </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card flex flex-col h-[600px] lg:col-span-2">
+            <h2 class="text-xl font-bold mb-2">Historique des Tirages</h2>
+            <p class="text-xs text-slate-400 mb-4">Tous les tirages selon vos filtres.</p>
+            <div id="historyScrollContainer" class="custom-scroll overflow-auto flex-grow rounded border border-slate-700">
+                <table class="w-full text-sm text-left text-slate-300 whitespace-nowrap">
+                    <thead class="text-xs text-slate-400 uppercase bg-slate-900 sticky top-0 z-10 shadow">
+                        <tr>
+                            <th scope="col" class="px-4 py-3">Date</th>
+                            <th scope="col" class="px-4 py-3">Tirage</th>
+                            <th scope="col" class="px-4 py-3">Boule 1</th>
+                            <th scope="col" class="px-4 py-3">Boule 2</th>
+                            <th scope="col" class="px-4 py-3">Boule 3</th>
+                            <th scope="col" class="px-4 py-3">Boule 4</th>
+                            <th scope="col" class="px-4 py-3">Boule 5</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTable" class="divide-y divide-slate-700/50">
+                        </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto text-center text-slate-500 text-xs mt-8 mb-6 px-4">
+        <p>⚠️ Attention : Le Loto 5/90 est un jeu de hasard qui consiste à tirer successivement au sort 5 boules parmi 90. Chaque tirage est indépendant. Ces analyses statistiques sont fournies à titre indicatif et ne garantissent en aucun cas des gains futurs. Jouez de manière responsable. La mise par ticket ne peut être inférieure à 100 F CFA.</p>
+        <p class="mt-2 text-blue-400 font-semibold">Nous utilisons les résultats de chaque tirage officiel pour alimenter régulièrement notre base de données.</p>
+    </div>
+
+    <script>
+        // Enregistrer le plugin DataLabels pour Chart.js
+        Chart.register(ChartDataLabels);
+
+        // ==========================================
+        // REMPLACEZ PAR VOTRE URL GITHUB RAW
+        // ==========================================
+        const DATA_URL = 'https://raw.githubusercontent.com/kevinquenum/loto-benin-dashboard/refs/heads/main/data/loto_historique.json';
+        
+        let allDraws = [];
+        let chartInstance = null;
+        
+        // Variables pour le Lazy Loading
+        const CHUNK_SIZE = 100;
+        let globalFilteredDraws = [];
+        let globalCouplesArr = [];
+        let currentHistoryIndex = 0;
+        let currentCouplesIndex = 0;
+
+        // Fonction pour convertir une date "DD/MM/YYYY" en objet Date Javascript
+        function parseDateString(dateStr) {
+            if (!dateStr) return new Date(0);
+            const parts = dateStr.split('/');
+            if (parts.length === 3) {
+                return new Date(parts[2], parts[1] - 1, parts[0]);
+            }
+            return new Date(dateStr); 
+        }
+
+        async function initApp() {
+            document.getElementById('loadingInfo').classList.remove('hidden');
+            document.getElementById('loadingInfo').innerText = "Téléchargement des données...";
+            document.getElementById('loadingInfo').className = "text-amber-400 text-sm font-semibold mt-2 md:mt-0";
+
+            try {
+                const response = await fetch(DATA_URL);
+                allDraws = await response.json();
+                analyserDonnees();
+                setupScrollListeners();
+            } catch (error) {
+                console.error("Erreur:", error);
+                document.getElementById('loadingInfo').innerText = "Erreur de connexion. Avez-vous mis la bonne URL ?";
+                document.getElementById('loadingInfo').className = "text-red-500 text-sm font-semibold mt-2 md:mt-0";
+            }
+        }
+
+        function analyserDonnees() {
+            if (allDraws.length === 0) return;
+
+            const filterValue = document.getElementById('typeFilter').value;
+            const startDateVal = document.getElementById('startDate').value;
+            const endDateVal = document.getElementById('endDate').value;
+            
+            let filteredDraws = allDraws;
+
+            // 1. Filtrer par Type
+            if (filterValue !== 'ALL') {
+                filteredDraws = filteredDraws.filter(d => d['Type'] === filterValue || d['Heure du tirage'] === filterValue);
+            }
+
+            // 2. Filtrer par Date
+            if (startDateVal) {
+                const sDate = new Date(startDateVal);
+                sDate.setHours(0,0,0,0);
+                filteredDraws = filteredDraws.filter(d => parseDateString(d['Date complète'] || d['Date']) >= sDate);
+            }
+            if (endDateVal) {
+                const eDate = new Date(endDateVal);
+                eDate.setHours(23,59,59,999);
+                filteredDraws = filteredDraws.filter(d => parseDateString(d['Date complète'] || d['Date']) <= eDate);
+            }
+
+            if(filteredDraws.length === 0) {
+                document.getElementById('loadingInfo').innerText = "Aucun tirage trouvé pour ces critères.";
+                document.getElementById('loadingInfo').className = "text-amber-400 text-sm font-semibold mt-2 md:mt-0";
+                
+                // Vider les vues
+                document.getElementById('historyTable').innerHTML = '';
+                document.getElementById('couplesTable').innerHTML = '';
+                if(chartInstance) chartInstance.destroy();
+                return;
+            }
+
+            document.getElementById('loadingInfo').innerText = `${filteredDraws.length} tirages analysés`;
+            document.getElementById('loadingInfo').className = "text-emerald-400 text-sm font-semibold mt-2 md:mt-0";
+
+            const frequencies = Array(91).fill(0);
+            const lastSeen = Array(91).fill(9999);
+            const couples = {};
+
+            filteredDraws.forEach((draw, index) => {
+                const boules = [
+                    parseInt(draw['Boule1']), parseInt(draw['Boule2']), 
+                    parseInt(draw['Boule3']), parseInt(draw['Boule4']), parseInt(draw['Boule5'])
+                ].sort((a, b) => a - b);
+
+                boules.forEach(b => {
+                    if(!isNaN(b)) {
+                        frequencies[b]++;
+                        if (lastSeen[b] === 9999) lastSeen[b] = index;
+                    }
+                });
+
+                for (let i = 0; i < boules.length; i++) {
+                    for (let j = i + 1; j < boules.length; j++) {
+                        if(isNaN(boules[i]) || isNaN(boules[j])) continue;
+                        const coupleKey = `${boules[i]} - ${boules[j]}`;
+                        couples[coupleKey] = (couples[coupleKey] || 0) + 1;
+                    }
+                }
+            });
+
+            // Préparer les stats pour les boules
+            let stats = [];
+            for (let i = 1; i <= 90; i++) {
+                stats.push({ number: i, freq: frequencies[i], delay: lastSeen[i] === 9999 ? 'N/A' : lastSeen[i] });
+            }
+            stats.sort((a, b) => b.freq - a.freq);
+
+            const hot = [...stats].slice(0, 5);
+            const cold = [...stats].sort((a, b) => a.freq - b.freq).slice(0, 5);
+            const delayed = [...stats].filter(s => s.delay !== 'N/A').sort((a, b) => b.delay - a.delay).slice(0, 5);
+
+            afficherBoules('hotNumbers', hot, 'ball-hot', 'Sorties');
+            afficherBoules('coldNumbers', cold, 'ball-cold', 'Sorties');
+            afficherBoules('delayedNumbers', delayed, 'ball-delay', 'Tirages ret.');
+            
+            // Préparer les données globales pour le Lazy Loading
+            globalFilteredDraws = filteredDraws;
+            globalCouplesArr = Object.keys(couples).map(key => ({
+                couple: key, count: couples[key]
+            })).sort((a, b) => b.count - a.count); 
+
+            // Afficher le premier lot (chunk)
+            afficherHistoriqueChunk(true); 
+            afficherCouplesChunk(true); 
+
+            mettreAJourGraphique(stats);
+        }
+
+        function afficherBoules(elementId, dataArray, cssClass, labelText) {
+            const container = document.getElementById(elementId);
+            let html = '';
+            dataArray.forEach(item => {
+                html += `
+                <div class="text-center flex flex-col items-center">
+                    <span class="ball ${cssClass}">${item.number}</span>
+                    <span class="text-[10px] font-medium text-slate-400 mt-1">${item.freq !== undefined && labelText === 'Sorties' ? item.freq + ' ' + labelText : item.delay + ' retards'}</span>
+                </div>`;
+            });
+            container.innerHTML = html;
+        }
+
+        // --- LAZY LOADING : HISTORIQUE ---
+        function afficherHistoriqueChunk(reset = false) {
+            const tbody = document.getElementById('historyTable');
+            if (reset) {
+                tbody.innerHTML = '';
+                currentHistoryIndex = 0;
+            }
+            
+            const chunk = globalFilteredDraws.slice(currentHistoryIndex, currentHistoryIndex + CHUNK_SIZE);
+            if (chunk.length === 0) return;
+
+            let html = '';
+            chunk.forEach(draw => {
+                html += `
+                <tr class="hover:bg-slate-800 transition-colors">
+                    <td class="px-4 py-3">${draw['Date complète'] || draw['Date'] || 'N/A'}</td>
+                    <td class="px-4 py-3 font-semibold text-blue-400">${draw['Heure du tirage']}</td>
+                    <td class="px-4 py-3"><span class="ball w-8 h-8 text-xs">${draw['Boule1']}</span></td>
+                    <td class="px-4 py-3"><span class="ball w-8 h-8 text-xs">${draw['Boule2']}</span></td>
+                    <td class="px-4 py-3"><span class="ball w-8 h-8 text-xs">${draw['Boule3']}</span></td>
+                    <td class="px-4 py-3"><span class="ball w-8 h-8 text-xs">${draw['Boule4']}</span></td>
+                    <td class="px-4 py-3"><span class="ball w-8 h-8 text-xs">${draw['Boule5']}</span></td>
+                </tr>`;
+            });
+            
+            // Injection ultra-rapide en HTML brut
+            tbody.insertAdjacentHTML('beforeend', html);
+            currentHistoryIndex += CHUNK_SIZE;
+        }
+
+        // --- LAZY LOADING : COUPLES ---
+        function afficherCouplesChunk(reset = false) {
+            const tbody = document.getElementById('couplesTable');
+            if (reset) {
+                tbody.innerHTML = '';
+                currentCouplesIndex = 0;
+            }
+
+            const chunk = globalCouplesArr.slice(currentCouplesIndex, currentCouplesIndex + CHUNK_SIZE);
+            if (chunk.length === 0) return;
+
+            let html = '';
+            const maxCount = globalCouplesArr.length > 0 ? globalCouplesArr[0].count : 1; // Sécurité
+
+            chunk.forEach(c => {
+                const percent = Math.min((c.count / maxCount) * 100, 100);
+                html += `
+                <tr class="hover:bg-slate-800 transition-colors">
+                    <td class="px-4 py-3 font-bold text-emerald-400">${c.couple}</td>
+                    <td class="px-4 py-3 text-slate-300">
+                        <div class="flex items-center">
+                            <div class="w-full bg-slate-700 rounded-full h-1.5 mr-2 max-w-[100px]">
+                                <div class="bg-blue-500 h-1.5 rounded-full" style="width: ${percent}%"></div>
+                            </div>
+                            ${c.count}
+                        </div>
+                    </td>
+                </tr>`;
+            });
+            
+            // Injection ultra-rapide en HTML brut
+            tbody.insertAdjacentHTML('beforeend', html);
+            currentCouplesIndex += CHUNK_SIZE;
+        }
+
+        // Écouteurs de défilement pour charger la suite automatiquement
+        function setupScrollListeners() {
+            const historyScroll = document.getElementById('historyScrollContainer');
+            historyScroll.addEventListener('scroll', function() {
+                // Si on arrive presque en bas du conteneur, on charge la suite
+                if (this.scrollTop + this.clientHeight >= this.scrollHeight - 100) {
+                    afficherHistoriqueChunk();
+                }
+            });
+
+            const couplesScroll = document.getElementById('couplesScrollContainer');
+            couplesScroll.addEventListener('scroll', function() {
+                if (this.scrollTop + this.clientHeight >= this.scrollHeight - 100) {
+                    afficherCouplesChunk();
+                }
+            });
+        }
+
+        function mettreAJourGraphique(stats) {
+            const isMobile = window.innerWidth < 768;
+            const canvasWrapper = document.getElementById('canvasWrapper');
+            const ctx = document.getElementById('freqChart').getContext('2d');
+            
+            if (isMobile) {
+                canvasWrapper.style.width = '100%';
+                canvasWrapper.style.height = '1800px'; 
+            } else {
+                canvasWrapper.style.height = '400px';
+                canvasWrapper.style.width = '2500px'; 
+            }
+
+            const labels = stats.map(s => s.number);
+            const data = stats.map(s => s.freq);
+
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
+
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Nombre de sorties',
+                        data: data,
+                        backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                        borderColor: 'rgba(37, 99, 235, 1)',
+                        borderWidth: 1,
+                        borderRadius: 4,
+                        barPercentage: 0.8,
+                    }]
+                },
+                options: {
+                    indexAxis: isMobile ? 'y' : 'x', 
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.raw + ' sorties';
+                                }
+                            }
+                        },
+                        datalabels: {
+                            color: '#ffffff',
+                            font: { weight: 'bold', size: 11 },
+                            anchor: 'center',
+                            align: 'center',
+                            formatter: function(value) { return value > 0 ? value : ''; }
+                        }
+                    },
+                    scales: {
+                        x: { beginAtZero: true, grid: { color: 'rgba(71, 85, 105, 0.1)' }, ticks: { color: '#94a3b8' } },
+                        y: { beginAtZero: true, grid: { display: false }, ticks: { color: '#94a3b8' } }
+                    }
+                }
+            });
+        }
+
+        // Optimisation majeure : Ne recalculer QUE les dimensions du graphique au redimensionnement
+        let resizeTimeout;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                if (allDraws.length > 0 && chartInstance) {
+                    const isMobile = window.innerWidth < 768;
+                    const canvasWrapper = document.getElementById('canvasWrapper');
+                    
+                    if (isMobile) {
+                        canvasWrapper.style.width = '100%';
+                        canvasWrapper.style.height = '1800px';
+                        chartInstance.options.indexAxis = 'y';
+                    } else {
+                        canvasWrapper.style.height = '400px';
+                        canvasWrapper.style.width = '2500px';
+                        chartInstance.options.indexAxis = 'x';
+                    }
+                    chartInstance.update();
+                }
+            }, 250); // Attend 250ms après la fin du scroll/resize pour exécuter
+        });
+
+        window.onload = initApp;
+    </script>
+</body>
+</html>
